@@ -1,23 +1,12 @@
 #include "dbus-status-notifier-watcher.h"
+#include "simplesystray-dbus-client.h"
 #include <gtk/gtk.h>
 
 SnWatcher *watcher_proxy = NULL;
 GList *items_list = NULL;
 
-typedef struct {
-  gint width;
-  gint height;
-  guint8 *data;
-} IconPixmap;
-
-typedef struct {
-  gchar *id;
-  gchar *service;
-  gchar *title;
-  gchar *icon_name;
-  IconPixmap *icon_pixmap;
-  GtkWidget *tray_icon;
-} SysTrayItem;
+static guint sys_tray_item_added_signal_id = 0;
+GObject *signal_emitter = NULL;
 
 GVariant *get_all_properties(GDBusProxy *proxy) {
   GError *error = NULL;
@@ -76,7 +65,6 @@ SysTrayItem *new_sys_tray_item(gchar *const service, GVariant *properties) {
   item->title = NULL;
   item->icon_name = NULL;
   item->icon_pixmap = NULL;
-  item->tray_icon = gtk_button_new();
   
 
   g_variant_get(properties, "(a{sv})", &iter);
@@ -153,10 +141,10 @@ static void add_item(gchar *const service) {
   if (properties != NULL) {
     g_print("Processing properties for service %s:\n", service);
     item = new_sys_tray_item(service, properties);
-
     if (item != NULL) {
       items_list = g_list_append(items_list, item);
       g_print("Item of service %s added\n", service);
+      g_signal_emit(signal_emitter, sys_tray_item_added_signal_id, 0, item);
     } else {
       g_print("Failed to create item for service %s\n", service);
     }
@@ -169,7 +157,6 @@ static void remove_item(gchar *const service) {
   GList *item = g_list_find_custom(items_list, service, compare_item);
   if (item != NULL) {
     g_free(((SysTrayItem *)item->data)->service);
-    gtk_widget_destroy(((SysTrayItem *)item->data)->tray_icon);
     g_free(item->data);
     items_list = g_list_delete_link(items_list, item);
     g_print("Item of service %s removed\n", service);
@@ -217,37 +204,28 @@ static gboolean setup_dbus_proxy() {
   g_print("Host registered\n");
 
   g_print("Connecting to item-registered signal\n");
+
   //TODO: connect to item-unregistered signal
   g_signal_connect(watcher_proxy, "item-registered", G_CALLBACK(on_item_registered), NULL);
   return TRUE;
 }
 
-static void activate(GtkApplication *app, gpointer user_data) {
-  GtkWidget *window;
-  GtkWidget *box;
-
-  window = gtk_application_window_new(app);
-  gtk_window_set_title(GTK_WINDOW(window), "Simple Tray");
-  gtk_window_set_default_size(GTK_WINDOW(window), 200, 50);
-  gtk_window_set_type_hint(GTK_WINDOW(window), GDK_WINDOW_TYPE_HINT_DIALOG);
-  box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-  gtk_container_add(GTK_CONTAINER(window), box);
-  gtk_widget_show_all(window);
-  gboolean result = setup_dbus_proxy();
-  if (!result) {
-    g_application_quit(G_APPLICATION(app));
+void init_dbus_client() {
+  signal_emitter = g_object_new(G_TYPE_OBJECT, NULL);
+  sys_tray_item_added_signal_id = g_signal_new("systray-item-added",
+                                                 G_TYPE_OBJECT,
+                                                 G_SIGNAL_RUN_LAST,
+                                                 0,
+                                                 NULL,
+                                                 NULL,
+                                                 NULL,
+                                                 G_TYPE_NONE,
+                                               1,
+                                               G_TYPE_POINTER
+                                               );
+  g_print("early sig emit %p\n", signal_emitter);
+  if (!setup_dbus_proxy()) {
+    g_printerr("Failed to set up dbus proxy\n");
+    return;
   }
-}
-
-
-int main(int argc, char *argv[]) {
-  GtkApplication *app;
-  gint status;
-
-  app = gtk_application_new("com.souheab.simpletray", G_APPLICATION_DEFAULT_FLAGS);
-  g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
-  status = g_application_run(G_APPLICATION(app), argc, argv);
-  g_object_unref(app);
-
-  return EXIT_SUCCESS;
 }
