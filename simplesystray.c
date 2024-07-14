@@ -61,7 +61,7 @@ static void add_item(gchar *const service) {
     GtkWidget *tray_icon = gtk_button_new();
     SysTrayItem *item = g_new(SysTrayItem, 1);
     item->tray_icon = tray_icon;
-    item->service = g_strdup(service);  // Make a copy of the string
+    item->service = g_strdup(service);
     items_list = g_list_append(items_list, item);
     
     GDBusProxy *item_proxy = get_sn_item_proxy(service);
@@ -81,14 +81,26 @@ static void add_item(gchar *const service) {
         g_variant_get(properties, "(a{sv})", &iter);
         g_print("Iterating over properties\n");
         while (g_variant_iter_loop(iter, "{sv}", &key, &value)) {
-            g_print("Processing property\n");
-            g_print("Key: %s\n", key);
-            g_print("Value type: %s\n", g_variant_get_type_string(value));
+          g_print("Processing property\n");
+          g_print("Key: %s\n", key);
+          g_print("Value type: %s\n", g_variant_get_type_string(value));
+          if (g_variant_is_of_type(value, G_VARIANT_TYPE_STRING)) {
+            g_print("Value: %s\n", g_variant_get_string(value, NULL));
+          } else if (g_variant_is_of_type(value, G_VARIANT_TYPE_BOOLEAN)) {
+            g_print("Value: %s\n",
+                    g_variant_get_boolean(value) ? "true" : "false");
+          } else if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT32)) {
+            g_print("Value: %d\n", g_variant_get_int32(value));
+          } else {
+            gchar *value_str = g_variant_print(value, TRUE);
+            g_print("Value: %s\n", value_str);
+            g_free(value_str);
+          }
         }
         g_variant_iter_free(iter);
         g_variant_unref(properties);
     } else {
-        g_print("No properties found for service %s\n", service);
+      g_print("No properties found for service %s\n", service);
     }
 
     g_print("Done processing\n");
