@@ -5,8 +5,18 @@ SnWatcher *watcher_proxy = NULL;
 GList *items_list = NULL;
 
 typedef struct {
-  GtkWidget *tray_icon;
+  gint width;
+  gint height;
+  guint8 *data;
+} IconPixmap;
+
+typedef struct {
+  gchar *id;
   gchar *service;
+  gchar *title;
+  gchar *icon_name;
+  IconPixmap *icon_pixmap;
+  GtkWidget *tray_icon;
 } SysTrayItem;
 
 GVariant *get_all_properties(GDBusProxy *proxy) {
@@ -56,55 +66,103 @@ gint compare_item(gconstpointer a, gconstpointer b) {
   return g_strcmp0(((SysTrayItem *)a)->service, ((SysTrayItem *)b)->service);
 }
 
+SysTrayItem *new_sys_tray_item(gchar *const service, GVariant *properties) {
+  GVariantIter *iter;
+  gchar *key;
+  GVariant *value;
+  SysTrayItem *item = g_new(SysTrayItem, 1);
+  item->id = NULL;
+  item->service = g_strdup(service);
+  item->title = NULL;
+  item->icon_name = NULL;
+  item->icon_pixmap = NULL;
+  item->tray_icon = gtk_button_new();
+  
+
+  g_variant_get(properties, "(a{sv})", &iter);
+  g_print("Iterating over properties\n");
+  while (g_variant_iter_loop(iter, "{sv}", &key, &value)) {
+    /* GVariant  */
+
+    g_print("Processing property\n");
+    g_print("Key: %s\n", key);
+    g_print("Value type: %s\n", g_variant_get_type_string(value));
+
+    if (g_strcmp0(key, "Id") == 0) {
+      item->id = g_variant_dup_string(value, NULL);
+    } else if (g_strcmp0(key, "Title") == 0) {
+      item->title = g_variant_dup_string(value, NULL);
+    } else if (g_strcmp0(key, "IconName") == 0) {
+      item->icon_name = g_variant_dup_string(value, NULL);
+    } else if (g_strcmp0(key, "IconPixmap") == 0) {
+      g_print("IconPixmap found\n");
+      GVariant *pixmap;
+      pixmap = g_variant_get_child_value(value, 0);
+      g_print("pixmap type: %s\n", g_variant_get_type_string(pixmap));
+      gint width, height;
+      GVariant *temp;
+      temp = g_variant_get_child_value(pixmap, 0) ;
+      g_variant_get(temp, "i", &width);
+      temp = g_variant_get_child_value(pixmap, 1) ;
+      g_variant_get(temp, "i", &height);
+      temp = g_variant_get_child_value(pixmap, 2);
+
+      const guint8 *data;
+      gsize length;
+      data = g_variant_get_fixed_array(temp, &length, sizeof(guint8));
+      g_print("length: %lu\n", length);
+      item->icon_pixmap = g_new(IconPixmap, 1);
+      item->icon_pixmap->width = width;
+      item->icon_pixmap->height = height;
+      item->icon_pixmap->data = g_memdup2(data, length);
+
+      g_print("IconPixmap: width: %d, height: %d, data_lenght: %lu\n", width, height, length);
+    }
+    /* if (g_variant_is_of_type(value, G_VARIANT_TYPE_STRING)) { */
+    /*   g_print("Value: %s\n", g_variant_get_string(value, NULL)); */
+    /* } else if (g_variant_is_of_type(value, G_VARIANT_TYPE_BOOLEAN)) { */
+    /*   g_print("Value: %s\n", g_variant_get_boolean(value) ? "true" : "false"); */
+    /* } else if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT32)) { */
+    /*   g_print("Value: %d\n", g_variant_get_int32(value)); */
+    /* } else { */
+    /*   gchar *value_str = g_variant_print(value, TRUE); */
+    /*   /\* g_print("Value: %s\n", value_str); *\/ */
+    /*   g_free(value_str); */
+    /* } */
+  }
+  g_variant_iter_free(iter);
+  g_variant_unref(properties);
+  g_print("Done processing\n");
+  return item;
+}
+
 static void add_item(gchar *const service) {
-    g_print("adding item\n");
-    GtkWidget *tray_icon = gtk_button_new();
-    SysTrayItem *item = g_new(SysTrayItem, 1);
-    item->tray_icon = tray_icon;
-    item->service = g_strdup(service);
-    items_list = g_list_append(items_list, item);
-    
-    GDBusProxy *item_proxy = get_sn_item_proxy(service);
-    if (item_proxy == NULL) {
-        g_print("Failed to get proxy for service %s\n", service);
-        return;
-    }
+  g_print("adding item\n");
+  GtkWidget *tray_icon = gtk_button_new();
+  SysTrayItem *item;
 
-    GVariant *properties = get_all_properties(item_proxy);
+  GDBusProxy *item_proxy = get_sn_item_proxy(service);
+  if (item_proxy == NULL) {
+    g_print("Failed to get proxy for service %s\n", service);
+    return;
+  }
 
-    if (properties != NULL) {
-        g_print("Processing properties for service %s:\n", service);
-        GVariantIter *iter;
-        gchar *key;
-        GVariant *value;
+  GVariant *properties = get_all_properties(item_proxy);
+  g_object_unref(item_proxy);
 
-        g_variant_get(properties, "(a{sv})", &iter);
-        g_print("Iterating over properties\n");
-        while (g_variant_iter_loop(iter, "{sv}", &key, &value)) {
-          g_print("Processing property\n");
-          g_print("Key: %s\n", key);
-          g_print("Value type: %s\n", g_variant_get_type_string(value));
-          if (g_variant_is_of_type(value, G_VARIANT_TYPE_STRING)) {
-            g_print("Value: %s\n", g_variant_get_string(value, NULL));
-          } else if (g_variant_is_of_type(value, G_VARIANT_TYPE_BOOLEAN)) {
-            g_print("Value: %s\n",
-                    g_variant_get_boolean(value) ? "true" : "false");
-          } else if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT32)) {
-            g_print("Value: %d\n", g_variant_get_int32(value));
-          } else {
-            gchar *value_str = g_variant_print(value, TRUE);
-            g_print("Value: %s\n", value_str);
-            g_free(value_str);
-          }
-        }
-        g_variant_iter_free(iter);
-        g_variant_unref(properties);
+  if (properties != NULL) {
+    g_print("Processing properties for service %s:\n", service);
+    item = new_sys_tray_item(service, properties);
+
+    if (item != NULL) {
+      items_list = g_list_append(items_list, item);
+      g_print("Item of service %s added\n", service);
     } else {
-      g_print("No properties found for service %s\n", service);
+      g_print("Failed to create item for service %s\n", service);
     }
-
-    g_print("Done processing\n");
-    g_object_unref(item_proxy);
+  } else {
+    g_print("Failed to get properties for service %s\n", service);
+  }
 }
 
 static void remove_item(gchar *const service) {
@@ -159,7 +217,7 @@ static gboolean setup_dbus_proxy() {
   g_print("Host registered\n");
 
   g_print("Connecting to item-registered signal\n");
-  // TODO: use item-registered and item-unregistered instead as they pass service name as argument
+  //TODO: connect to item-unregistered signal
   g_signal_connect(watcher_proxy, "item-registered", G_CALLBACK(on_item_registered), NULL);
   return TRUE;
 }
