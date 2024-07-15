@@ -8,11 +8,11 @@ GList *items_list = NULL;
 static guint sys_tray_item_added_signal_id = 0;
 GObject *signal_emitter = NULL;
 
-GVariant *get_all_properties(GDBusProxy *proxy) {
+GVariant *get_all_properties(GDBusProxy *proxy, gchar *interface) {
   GError *error = NULL;
   GVariant *result = g_dbus_proxy_call_sync(proxy,
                                             "org.freedesktop.DBus.Properties.GetAll",
-                                            g_variant_new("(s)", "org.kde.StatusNotifierItem"),
+                                            g_variant_new("(s)", interface),
                                             G_DBUS_CALL_FLAGS_NONE,
                                             -1,
                                             NULL,
@@ -64,8 +64,9 @@ SysTrayItem *new_sys_tray_item(gchar *const service, GVariant *properties) {
   item->service = g_strdup(service);
   item->title = NULL;
   item->icon_name = NULL;
+  item->item_is_menu = FALSE;
   item->icon_pixmap = NULL;
-  
+  item->menu_object_path = NULL;
 
   g_variant_get(properties, "(a{sv})", &iter);
   g_print("Iterating over properties\n");
@@ -105,6 +106,11 @@ SysTrayItem *new_sys_tray_item(gchar *const service, GVariant *properties) {
       item->icon_pixmap->data = g_memdup2(data, length);
 
       g_print("IconPixmap: width: %d, height: %d, data_lenght: %lu\n", width, height, length);
+    } else if (g_strcmp0(key, "ItemIsMenu") == 0) {
+      item->item_is_menu = g_variant_get_boolean(value);
+    } else if (g_strcmp0(key, "Menu") == 0) {
+      gchar* menu_object_path = g_variant_dup_string(value, NULL);
+      printf("Menu object path: %s\n", menu_object_path);
     }
     /* if (g_variant_is_of_type(value, G_VARIANT_TYPE_STRING)) { */
     /*   g_print("Value: %s\n", g_variant_get_string(value, NULL)); */
@@ -135,7 +141,7 @@ static void add_item(gchar *const service) {
     return;
   }
 
-  GVariant *properties = get_all_properties(item_proxy);
+  GVariant *properties = get_all_properties(item_proxy, "org.kde.StatusNotifierItem");
   g_object_unref(item_proxy);
 
   if (properties != NULL) {

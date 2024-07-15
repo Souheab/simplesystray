@@ -12,6 +12,8 @@ typedef struct {
   gchar *service;
   gchar *title;
   gchar *icon_name;
+  gboolean item_is_menu;
+  gchar *menu_object_path;
   IconPixmap *icon_pixmap;
 } SysTrayItem;
 void init_dbus_client();

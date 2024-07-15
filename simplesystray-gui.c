@@ -11,7 +11,7 @@ GtkWidget *systray_box;
 static void new_sys_tray_item_view(SysTrayItem *item) {
   SysTrayItemView *view = g_new(SysTrayItemView, 1);
   view->id = g_strdup(item->id);
-  if (item->icon_name != NULL || item->icon_name[0] != '\0') {
+  if (item->icon_name != NULL) {
     view->systray_item_widget = gtk_button_new_from_icon_name(item->icon_name, GTK_ICON_SIZE_MENU);
   } else {
     GdkPixbuf *pixbuf =
